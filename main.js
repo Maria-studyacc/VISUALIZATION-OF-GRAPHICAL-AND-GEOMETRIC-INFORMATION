@@ -86,17 +86,45 @@ function draw() {
     surface.Draw();
 }
 
-function CreateSurfaceData()
-{
-    let vertexList = [];
+function generatePoint(u, v, a, b) {
+    const x = a * (b - Math.cos(u)) * Math.sin(u) * Math.cos(v);
+    const y = a * (b - Math.cos(u)) * Math.sin(u) * Math.sin(v);
+    const z = Math.cos(u);
+    vertexList.push(x, y, z);
+}
 
-    for (let i=0; i<360; i+=5) {
-        vertexList.push( Math.sin(deg2rad(i)), 1, Math.cos(deg2rad(i)) );
-        vertexList.push( Math.sin(deg2rad(i)), 0, Math.cos(deg2rad(i)) );
+let vertexList = [];
+
+function CreateSurfaceData() {
+    // Значення параметра a
+    const a = 0.5;
+    // Значення параметра b
+    const b = 1;
+    // Кількість кроків циклу побудови
+    const steps = 20;
+
+    // Побудова "горизонтальних кіл" фігури
+    for (let i = 0; i <= steps; i++) {
+        const u = (i / steps) * Math.PI;
+        for (let j = 0; j <= steps; j++) {
+            const v = (j / steps) * Math.PI * 2;
+            generatePoint(u, v, a, b);
+        }
+    }
+
+    // Побудова "вертикальних кіл" фігури
+    for (let i = 0; i <= steps; i++) {
+        const v = (i / steps) * Math.PI * 2;
+        for (let j = 0; j <= steps; j++) {
+            const u = (j / steps) * Math.PI;
+            generatePoint(u, v, a, b);
+        }
     }
 
     return vertexList;
 }
+
+
 
 
 /* Initialize the WebGL context. Called from init() */
