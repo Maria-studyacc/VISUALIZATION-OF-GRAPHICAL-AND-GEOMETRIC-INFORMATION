@@ -101,7 +101,7 @@ function CreateSurfaceData() {
     // Значення параметра b
     const b = 1;
     // Кількість кроків циклу побудови
-    const steps = 20;
+    const steps = 30;
 
     // Побудова "горизонтальних кіл" фігури
     for (let i = 0; i <= steps; i++) {
