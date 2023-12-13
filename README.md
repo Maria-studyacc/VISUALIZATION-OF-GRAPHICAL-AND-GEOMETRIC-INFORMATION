@@ -1,4 +1,4 @@
-# WebGL
+# Лабораторна робота 2
 
 Project that accompanies VGGI credit module.
 
