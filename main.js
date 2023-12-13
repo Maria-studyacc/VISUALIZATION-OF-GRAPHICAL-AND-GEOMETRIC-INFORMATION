@@ -4,6 +4,7 @@ let gl;                         // The webgl context.
 let surface;                    // A surface model
 let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
+let line;
 
 function deg2rad(angle) {
     return angle * Math.PI / 180;
@@ -14,23 +15,31 @@ function deg2rad(angle) {
 function Model(name) {
     this.name = name;
     this.iVertexBuffer = gl.createBuffer();
+    this.iNormalBuffer = gl.createBuffer();
     this.count = 0;
 
-    this.BufferData = function(vertices) {
+    this.BufferData = function (vertices, normals) {
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STREAM_DRAW);
 
-        this.count = vertices.length/3;
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.iNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STREAM_DRAW);
+
+        this.count = vertices.length / 3;
     }
 
-    this.Draw = function() {
+    this.Draw = function () {
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
         gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(shProgram.iAttribVertex);
-   
-        gl.drawArrays(gl.LINE_STRIP, 0, this.count);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.iNormalBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribNormal);
+
+        gl.drawArrays(gl.TRIANGLES, 0, this.count);
     }
 }
 
@@ -48,7 +57,7 @@ function ShaderProgram(name, program) {
     // Location of the uniform matrix representing the combined transformation.
     this.iModelViewProjectionMatrix = -1;
 
-    this.Use = function() {
+    this.Use = function () {
         gl.useProgram(this.prog);
     }
 }
@@ -58,88 +67,141 @@ function ShaderProgram(name, program) {
  * (Note that the use of the above drawPrimitive function is not an efficient
  * way to draw with WebGL.  Here, the geometry is so simple that it doesn't matter.)
  */
-function draw() { 
-    gl.clearColor(0,0,0,1);
+function draw() {
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
+
     /* Set the values of the projection transformation */
-    let projection = m4.perspective(Math.PI/8, 1, 8, 12); 
-    
+    // let projection = m4.perspective(Math.PI / 8, 1, 8, 12);
+    const projVal = 17;
+    let projection = m4.orthographic(-projVal, projVal, -projVal, projVal, -projVal, projVal);
+
     /* Get the view matrix from the SimpleRotator object.*/
     let modelView = spaceball.getViewMatrix();
 
-    let rotateToPointZero = m4.axisRotation([0.707,0.707,0], 0.7);
-    let translateToPointZero = m4.translation(0,0,-10);
+    let rotateToPointZero = m4.axisRotation([0.707, 0.707, 0], 0.7);
+    let translateToPointZero = m4.translation(0, 0, -5);
 
-    let matAccum0 = m4.multiply(rotateToPointZero, modelView );
-    let matAccum1 = m4.multiply(translateToPointZero, matAccum0 );
-        
+    let matAccum0 = m4.multiply(rotateToPointZero, modelView);
+    let matAccum1 = m4.multiply(translateToPointZero, matAccum0);
+
     /* Multiply the projection matrix times the modelview matrix to give the
        combined transformation matrix, and send that to the shader program. */
-    let modelViewProjection = m4.multiply(projection, matAccum1 );
+    let modelViewProjection = m4.multiply(projection, matAccum1);
+    const normalMat = m4.identity();
+    m4.inverse(modelView, normalMat);
+    m4.transpose(normalMat, normalMat);
 
-    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
-    
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection);
+    gl.uniformMatrix4fv(shProgram.iNormalMat, false, normalMat);
+
     /* Draw the six faces of a cube, with different colors. */
-    gl.uniform4fv(shProgram.iColor, [1,1,0,1] );
+    gl.uniform4fv(shProgram.iColor, [1, 1, 0, 1]);
 
     surface.Draw();
 }
 
-function generatePoint(u, v, a, b) {
-    const x = a * (b - Math.cos(u)) * Math.sin(u) * Math.cos(v);
-    const y = a * (b - Math.cos(u)) * Math.sin(u) * Math.sin(v);
-    const z = Math.cos(u);
-    vertexList.push(x, y, z);
-}
-
-let vertexList = [];
-
+const { cos, sin, sqrt, pow, PI } = Math
 function CreateSurfaceData() {
-    // Значення параметра a
-    const a = 0.5;
-    // Значення параметра b
-    const b = 1;
-    // Кількість кроків циклу побудови
-    const steps = 30;
-
-    // Побудова "горизонтальних кіл" фігури
-    for (let i = 0; i <= steps; i++) {
-        const u = (i / steps) * Math.PI;
-        for (let j = 0; j <= steps; j++) {
-            const v = (j / steps) * Math.PI * 2;
-            generatePoint(u, v, a, b);
+    let vertexList = [];
+    const NUM_STEPS_U = 50,
+        NUM_STEPS_Z = 50,
+        MAX_U = PI * 2,
+        MAX_Z = 3,
+        STEP_U = MAX_U / NUM_STEPS_U,
+        STEP_Z = MAX_Z / NUM_STEPS_Z
+    for (let u = 0; u < MAX_U; u += STEP_U) {
+        for (let z = -3; z < MAX_Z; z += STEP_Z) {
+            let vertex = cassiniVertex(u, z)
+            vertexList.push(...vertex)
+            vertex = cassiniVertex(u + STEP_U, z)
+            vertexList.push(...vertex)
+            vertex = cassiniVertex(u, z + STEP_Z)
+            vertexList.push(...vertex)
+            vertexList.push(...vertex)
+            vertex = cassiniVertex(u + STEP_U, z)
+            vertexList.push(...vertex)
+            vertex = cassiniVertex(u + STEP_U, z + STEP_Z)
+            vertexList.push(...vertex)
         }
     }
-
-    // Побудова "вертикальних кіл" фігури
-    for (let i = 0; i <= steps; i++) {
-        const v = (i / steps) * Math.PI * 2;
-        for (let j = 0; j <= steps; j++) {
-            const u = (j / steps) * Math.PI;
-            generatePoint(u, v, a, b);
-        }
-    }
-
     return vertexList;
 }
 
+function r(u, z) {
+    return sqrt(c(z) * c(z) * cos(2 * u) + sqrt(pow(a, 4) - pow(c(z), 4) * pow(sin(2 * u), 2)))
+}
+function c(z) {
+    return 3 * z;
+}
 
+const a = 8
+const scaler = 1;
+
+function cassiniVertex(u, z) {
+    // console.log(r(u, z))
+    let x = r(u, z) * cos(u),
+        y = r(u, z) * sin(u),
+        cZ = z;
+    return [scaler * x, scaler * y, scaler * cZ];
+}
+
+function CreateNormals() {
+    let normalList = [];
+    const NUM_STEPS_U = 50,
+        NUM_STEPS_Z = 50,
+        MAX_U = PI * 2,
+        MAX_Z = 3,
+        STEP_U = MAX_U / NUM_STEPS_U,
+        STEP_Z = MAX_Z / NUM_STEPS_Z
+    for (let u = 0; u < MAX_U; u += STEP_U) {
+        for (let z = -3; z < MAX_Z; z += STEP_Z) {
+            let vertex = normalAnalytic(u, z)
+            normalList.push(...vertex)
+            vertex = normalAnalytic(u + STEP_U, z)
+            normalList.push(...vertex)
+            vertex = normalAnalytic(u, z + STEP_Z)
+            normalList.push(...vertex)
+            normalList.push(...vertex)
+            vertex = normalAnalytic(u + STEP_U, z)
+            normalList.push(...vertex)
+            vertex = normalAnalytic(u + STEP_U, z + STEP_Z)
+            normalList.push(...vertex)
+        }
+    }
+    return normalList;
+}
+const e = 0.0001
+function normalAnalytic(u, z) {
+    let u1 = cassiniVertex(u, z),
+        u2 = cassiniVertex(u + e, z),
+        z1 = cassiniVertex(u, z),
+        z2 = cassiniVertex(u, z + e);
+    const dU = [], dZ = []
+    for (let i = 0; i < 3; i++) {
+        dU.push((u1[i] - u2[i]) / e)
+        dZ.push((z1[i] - z2[i]) / e)
+    }
+    const n = m4.normalize(m4.cross(dU, dZ))
+    return n
+}
 
 
 /* Initialize the WebGL context. Called from init() */
 function initGL() {
-    let prog = createProgram( gl, vertexShaderSource, fragmentShaderSource );
+    let prog = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 
     shProgram = new ShaderProgram('Basic', prog);
     shProgram.Use();
 
-    shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribNormal = gl.getAttribLocation(prog, "normal");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+    shProgram.iNormalMat = gl.getUniformLocation(prog, "normalMat");
+    shProgram.iColor = gl.getUniformLocation(prog, "color");
 
     surface = new Model('Surface');
-    surface.BufferData(CreateSurfaceData());
+    surface.BufferData(CreateSurfaceData(), CreateNormals());
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -154,24 +216,24 @@ function initGL() {
  * source code for the vertex shader and for the fragment shader.
  */
 function createProgram(gl, vShader, fShader) {
-    let vsh = gl.createShader( gl.VERTEX_SHADER );
-    gl.shaderSource(vsh,vShader);
+    let vsh = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vsh, vShader);
     gl.compileShader(vsh);
-    if ( ! gl.getShaderParameter(vsh, gl.COMPILE_STATUS) ) {
+    if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
         throw new Error("Error in vertex shader:  " + gl.getShaderInfoLog(vsh));
-     }
-    let fsh = gl.createShader( gl.FRAGMENT_SHADER );
+    }
+    let fsh = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fsh, fShader);
     gl.compileShader(fsh);
-    if ( ! gl.getShaderParameter(fsh, gl.COMPILE_STATUS) ) {
-       throw new Error("Error in fragment shader:  " + gl.getShaderInfoLog(fsh));
+    if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) {
+        throw new Error("Error in fragment shader:  " + gl.getShaderInfoLog(fsh));
     }
     let prog = gl.createProgram();
-    gl.attachShader(prog,vsh);
+    gl.attachShader(prog, vsh);
     gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
-    if ( ! gl.getProgramParameter( prog, gl.LINK_STATUS) ) {
-       throw new Error("Link error in program:  " + gl.getProgramInfoLog(prog));
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error("Link error in program:  " + gl.getProgramInfoLog(prog));
     }
     return prog;
 }
@@ -185,7 +247,7 @@ function init() {
     try {
         canvas = document.getElementById("webglcanvas");
         gl = canvas.getContext("webgl");
-        if ( ! gl ) {
+        if (!gl) {
             throw "Browser does not support WebGL";
         }
     }

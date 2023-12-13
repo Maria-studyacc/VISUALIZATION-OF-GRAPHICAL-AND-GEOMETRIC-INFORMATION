@@ -1,5 +1,5 @@
-# Лабораторна робота 1
+# WebGL
 
-Виконала: Макаренко Марія (група ТР-32мп).
+Project that accompanies VGGI credit module.
 
-Варіант: 14.
+Visit vggi-kpi.blogspot.com for more information
